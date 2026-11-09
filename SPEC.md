@@ -317,8 +317,9 @@ export const ErrorResponse = z.object({      // 400, 404, 503: same shape as Por
 | Case | Answer |
 |---|---|
 | Saved | `202` with `updateId`. It means **saved and will be synced**, not "already on the portal". |
-| Invalid body | `400`, nothing saved, e.g. `{ "error": { "code": "INVALID_DATE", "message": "..." } }` |
-| PostgreSQL unavailable | `503`, nothing saved. The update was **not** accepted and the client must retry (1.2). |
+| Invalid body | `400`, nothing saved, e.g. `{ "error": { "code": "INVALID_DATE", "message": "..." } }`. Codes (the same names as Portal Sol): `INVALID_DATE` for any problem with `from` or `to`, including `to` before `from`; `RANGE_TOO_LARGE` for more than 366 days; `INVALID_BODY` for everything else (wrong type, missing or unknown field, bad price, malformed JSON). |
+| PostgreSQL unavailable | `503` with code `UNAVAILABLE`, nothing saved. The update was **not** accepted and the client must retry (1.2). |
+| Anything unexpected | `500` with code `INTERNAL`, nothing saved (the transaction is rolled back). |
 
 - Sending the same update twice (a client retry, say) is harmless: it is stored twice, but the newest value wins anyway, so the portal ends the same.
 - `updateId` appears in the logs ("update 42 accepted"), so someone on call can follow one request.
@@ -585,6 +586,7 @@ async function callPortal(req: PortalRequest): Promise<Response | 'paused'> {
 - If a call gives up its turn because a pause started while it waited, the turn is simply lost. That only makes us slightly slower, never faster.
 - Calls **already sent** when a `429` comes back can't be stopped: we didn't know about the pause when we sent them.
 - A `429` is **not** a failed attempt: `attempts` and the backoff don't change (section 9).
+- If saving the pause to the database fails, the error is logged and the call still returns "paused": the in-memory pause already protects the rate limit, and the pause is only lost if the service restarts before the next `429`.
 
 **Why both rules.** The pause alone is what API.md asks for, but without the limiter every busy period ends in a burst of rejected requests. The limiter alone breaks when our guess of the limit is wrong. Together, `429`s are rare and always respected.
 
@@ -654,6 +656,7 @@ export const SyncStatusResponse = z.object({
 - Day states as in section 4.2. The overall `state` is the most urgent one present: `failed` → `pending` → `synced`.
 - `ranges` lists only the days that are **not synced**, joined into neighbouring days with the same state, so the list stays short. It is empty when everything is synced.
 - An id we have **never received an update for** gets `404` with our usual error shape (`NOT_FOUND`). It means "we know nothing about it", which is different from the portal's `404`, shown as failed days.
+- `lastError` is the most recent error recorded on any of the accommodation's days, even if those days have synced since; `state` and `ranges` say whether anything is still wrong.
 - A global `429` pause isn't shown here, because it affects every accommodation; it shows in metrics (section 13). Here it appears as `pending` with a later `nextAttemptAt`.
 
 **Alternatives considered.**
@@ -727,10 +730,11 @@ pino JSON on stdout (`pino-http` for HTTP requests). Every sync line carries `ac
 export const Config = z.object({
   PORTAL_URL:                     z.string().url().default('http://localhost:4000'),
   PORTAL_API_KEY:                 z.string().min(1).default('sol-demo-key'), // sent as X-Api-Key
-  PORTAL_TIMEOUT_MS:              z.coerce.number().int().positive(),        // default set from the probe
-  PORTAL_MAX_REQUESTS_PER_MINUTE: z.coerce.number().int().positive(),        // default set from the probe
+  PORTAL_TIMEOUT_MS:              z.coerce.number().int().positive().default(5000), // probe: normal answers < 1 s, slow ones ~10 s
+  PORTAL_MAX_REQUESTS_PER_MINUTE: z.coerce.number().int().positive().default(25),  // probe: the portal allows 30
   SYNC_CONCURRENCY:               z.coerce.number().int().positive().default(4),
   DATABASE_URL:                   z.string().default('postgres://sync:sync@localhost:5432/sync'),
+  PORT:                           z.coerce.number().int().positive().default(3000), // HTTP port of this service
 });
 export type Config = z.infer<typeof Config>;
 ```
@@ -739,10 +743,11 @@ export type Config = z.infer<typeof Config>;
 |---|---|---|
 | `PORTAL_URL` | `http://localhost:4000` | Portal Sol base URL |
 | `PORTAL_API_KEY` | `sol-demo-key` | Sent as `X-Api-Key` on every `/api/` call, added in one place (the portal client) |
-| `PORTAL_TIMEOUT_MS` | _from probe_ | Timeout per portal call |
-| `PORTAL_MAX_REQUESTS_PER_MINUTE` | _from probe_ | Limiter setting, just under the measured limit |
+| `PORTAL_TIMEOUT_MS` | `5000` | Timeout per portal call (probe: normal answers take under 1 s, slow ones about 10 s) |
+| `PORTAL_MAX_REQUESTS_PER_MINUTE` | `25` | Limiter setting, just under the measured limit of 30 |
 | `SYNC_CONCURRENCY` | `4` | Number of workers (section 7) |
 | `DATABASE_URL` | `postgres://sync:sync@localhost:5432/sync` | PostgreSQL connection |
+| `PORT` | `3000` | HTTP port of this service |
 
 **Code constants**, not environment variables: `SYNC_POLL_INTERVAL_MS = 1000` (section 8); backoff from about 2 s, capped at 5 min (section 9); 366 days per `POST` (section 6); 31 days per `PUT` (section 7).
 
