@@ -371,8 +371,10 @@ SELECT pg_advisory_unlock(hashtext($1));
 
 1. **Find work and lock it.**
    ```sql
-   SELECT DISTINCT accommodation_id FROM desired_days
+   SELECT accommodation_id FROM desired_days
    WHERE version > synced_version AND failed_at IS NULL AND next_attempt_at <= now()
+   GROUP BY accommodation_id
+   ORDER BY min(next_attempt_at)         -- the one that has waited longest goes first
    LIMIT 20;
    ```
    Try the lock on each id in turn. If it's taken, try the next one.
