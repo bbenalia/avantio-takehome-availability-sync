@@ -52,5 +52,5 @@ describe('test 7: full run against the real Portal Sol (SPEC §16)', () => {
       expect(days).toBeLessThanOrEqual(31);
     }
     expect(log.filter(r => r.status === 429)).toHaveLength(0); // our limiter stays under the portal's limit
-  });
+  }, 70_000); // ~6 calls at 25/min take ~15 s; a random 503 adds a 2 s+ backoff, so the default 20 s is too tight
 });
