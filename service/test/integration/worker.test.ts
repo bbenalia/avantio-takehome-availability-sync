@@ -113,6 +113,21 @@ describe('worker: one at a time per accommodation (SPEC §7.1)', () => {
   });
 });
 
+describe('worker: which accommodation goes first (SPEC §7.2 step 1)', () => {
+  it('with more than 20 due accommodations, the one that has waited longest is sent first and none is left out', async () => {
+    const ids = Array.from({ length: 25 }, (_, i) => `acc-${String(i).padStart(2, '0')}`);
+    for (const id of ids) await upd(id, '2026-10-01', '2026-10-01', 100);
+    // The last one inserted has been waiting longest: without an ORDER BY it would not even be among the first 20 rows.
+    await pool.query(`UPDATE desired_days SET next_attempt_at = now() - interval '1 hour' WHERE accommodation_id = 'acc-24'`);
+    await start({ concurrency: 1 });
+    await waitFor(async () => (await pool.query(
+      `SELECT count(*)::int AS n FROM desired_days WHERE version > synced_version`)).rows[0].n === 0, 20_000, 'all 25 synced');
+    const order = portal.puts().map(p => /accommodations\/([^/]+)\//.exec(p.path)![1]);
+    expect(order[0]).toBe('acc-24');
+    expect(new Set(order).size).toBe(25);
+  });
+});
+
 describe('worker: failures (SPEC §9, AC6, AC7, AC8)', () => {
   it('retries 503s and a 429 until everything is synced, and sends nothing before Retry-After ends', async () => {
     await upd('acc-1', '2026-10-01', '2026-10-02', 100);
