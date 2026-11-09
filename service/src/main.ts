@@ -8,8 +8,6 @@ import { createPortalClient } from './portal-client.ts';
 import { startWorkers } from './worker.ts';
 
 const config = loadConfig();
-// The HTTP port is not part of SPEC §14; PORT with a default of 3000 is the usual convention.
-const port = Number(process.env.PORT ?? 3000);
 
 const pool = createPool(config.DATABASE_URL);
 await runMigrations(pool);
@@ -26,7 +24,7 @@ const portal = createPortalClient({
 await portal.start(); // loads a 429 pause saved before a restart
 
 const workers = startWorkers({ pool, portal, concurrency: config.SYNC_CONCURRENCY, onRetry: metrics.onRetry });
-const server = createApp({ pool, metrics }).listen(port, () => logger.info({ port }, 'service listening'));
+const server = createApp({ pool, metrics }).listen(config.PORT, () => logger.info({ port: config.PORT }, 'service listening'));
 
 // SPEC §8.2: stop taking requests and new work, let calls in flight finish, release locks, exit.
 let stopping = false;

@@ -8,6 +8,7 @@ export const Config = z.object({
   // Probe: the portal allows 30 requests per minute; we stay a bit below.
   PORTAL_MAX_REQUESTS_PER_MINUTE: z.coerce.number().int().positive().default(25),
   SYNC_CONCURRENCY: z.coerce.number().int().positive().default(4),
+  PORT: z.coerce.number().int().positive().default(3000),
   DATABASE_URL: z.string().default('postgres://sync:sync@localhost:5432/sync'),
 });
 export type Config = z.infer<typeof Config>;

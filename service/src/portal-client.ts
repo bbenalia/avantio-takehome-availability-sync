@@ -1,4 +1,5 @@
 import { setTimeout as sleep } from 'node:timers/promises';
+import { logger } from './logger.ts';
 
 export type PauseStore = { load(): Promise<number>; save(ms: number): Promise<void> };
 
@@ -58,16 +59,22 @@ export function createPortalClient(opts: PortalClientOptions) {
     await limiter.takeTurn();
     if (Date.now() < pause.until) return 'paused';
     // No await between the check above and fetch: nothing can set the pause in between.
+    let res: Response;
     try {
-      const res = await fetch(opts.url + path, { ...init, signal: AbortSignal.timeout(opts.timeoutMs) });
-      if (res.status === 429) {
-        pause.until = Math.max(pause.until, Date.now() + retryAfterMs(res));
-        await opts.pauseStore.save(pause.until);
-      }
-      return res;
+      res = await fetch(opts.url + path, { ...init, signal: AbortSignal.timeout(opts.timeoutMs) });
     } catch (err) {
       return (err as Error).name === 'TimeoutError' ? 'timeout' : 'network_error';
     }
+    if (res.status === 429) {
+      pause.until = Math.max(pause.until, Date.now() + retryAfterMs(res));
+      // The pause is already active in memory; failing to save it must not lose the 429.
+      try {
+        await opts.pauseStore.save(pause.until);
+      } catch (err) {
+        logger.error({ err }, 'could not save the 429 pause');
+      }
+    }
+    return res;
   }
 
   async function errorCode(res: Response): Promise<string> {

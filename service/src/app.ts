@@ -16,11 +16,18 @@ function badRequestCode(error: ZodError): string {
   return 'INVALID_BODY';
 }
 
+const UNAVAILABLE_CODES = ['ECONNREFUSED', 'ECONNRESET', 'ENOTFOUND', 'EHOSTUNREACH', '57P01'];
+
+// Postgres class 08 is "connection exception".
+function isUnavailableCode(code: string | undefined): boolean {
+  return code !== undefined && (UNAVAILABLE_CODES.includes(code) || code.startsWith('08'));
+}
+
 function isDbUnavailable(err: unknown): boolean {
   // Node may wrap several connection attempts (IPv4 + IPv6) in an AggregateError.
   const errors = err instanceof AggregateError ? err.errors : [err];
   return errors.some(e =>
-    (e as { code?: string }).code === 'ECONNREFUSED' ||
+    isUnavailableCode((e as { code?: string }).code) ||
     (e instanceof Error && e.message.includes('timeout exceeded when trying to connect')));
 }
 
