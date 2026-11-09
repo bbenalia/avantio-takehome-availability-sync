@@ -135,7 +135,12 @@ These were not discussed as separate questions; they follow from the decisions a
 
 - **Workflow (set up before coding):** `CLAUDE.md` with the rules, plus two Claude Code agents in `.claude/agents/`: `implementer` (writes code for one slice until its tests pass, never touches tests) and `reviewer` (read-only, checks the diff against SPEC.md and reports). Per slice: red (main session drafts the tests, the user reviews and commits them) → green (`implementer`, driven by `/goal`) → review (`reviewer`) → the user decides and commits. Slices with nothing to test-drive (probe, scaffold, migrations, shutdown) are done in a normal session.
 - **First attempt discarded:** after the scope cut, the user deleted the first worktree and restarted from the updated SPEC. Its useful output was the three findings above.
-- _Per-slice notes to fill in._
+- _Implementation run (orchestrated by the main session, one `/goal`):_ the main session wrote all tests, the `implementer` agent wrote the code, the `reviewer` agent approved each slice. The tests were **not** reviewed by the user between red and green in this run (the goal asked for one report at the end), so the user's test review is still pending.
+- Probe results: Portal Sol allows 30 requests/min (31st gets `429`, `Retry-After` = rest of the minute, 47 s in the first run); normal answers take up to ~0.8 s, "slow" ones ~10 s; random `503`s (~10%) also on `GET`. Defaults chosen: `PORTAL_TIMEOUT_MS=5000`, `PORTAL_MAX_REQUESTS_PER_MINUTE=25`.
+- AI mistake: the implementer used a TypeScript constructor parameter property, which Node's type stripping rejects; found only when the service was started for real. Fixed and `erasableSyntaxOnly` added to `tsconfig.json`.
+- AI mistake: the first end-to-end test did not retry its own `GET` to the portal, which also returns random `503`s; fixed in the test.
+- Agents running tests at the same time on the one shared Postgres produced false failures; tests must be run by one session at a time.
+- Gaps found: `PORT` is not in SPEC §14 (added as env var, default 3000); error codes `INVALID_BODY`, `UNAVAILABLE`, `INTERNAL` are not in SPEC §6.3.
 
 ## Practical note
 
