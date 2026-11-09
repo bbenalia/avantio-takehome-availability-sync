@@ -124,6 +124,21 @@ describe('POST /updates (SPEC §6)', () => {
     }
   });
 
+  it.each(['ECONNRESET', 'ENOTFOUND', 'EHOSTUNREACH', '57P01', '08006'])(
+    'answers 503 (not 500) for a database connection error %s', async code => {
+      const broken = { connect: async () => { throw Object.assign(new Error('connection problem'), { code }); } } as unknown as pg.Pool;
+      const s = createApp({ pool: broken }).listen(0);
+      try {
+        const res = await fetch(`http://127.0.0.1:${(s.address() as AddressInfo).port}/updates`, {
+          method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(valid),
+        });
+        expect(res.status).toBe(503);
+        expect((await res.json()).error.code).toBe('UNAVAILABLE');
+      } finally {
+        s.close();
+      }
+    });
+
   it('keeps all days or none when the insert fails halfway (one transaction)', async () => {
     // Make the desired_days insert fail after the updates insert succeeded.
     await pool.query('ALTER TABLE desired_days ADD CONSTRAINT no_oct4 CHECK (date <> DATE \'2026-10-04\') NOT VALID');

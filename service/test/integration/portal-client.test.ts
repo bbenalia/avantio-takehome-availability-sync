@@ -141,4 +141,18 @@ describe('portal client: 429 pause (SPEC §11)', () => {
     const r = await client.putAvailability('acc-1', range);
     expect(r.kind).not.toBe('retry');
   });
+
+  it('still reports paused (not a retry) when saving the pause fails; the in-memory pause is kept (SPEC §11.2)', async () => {
+    portal.queue({ status: 429, retryAfter: 5 });
+    const seen: string[] = [];
+    const client = createPortalClient({
+      url: portal.url, apiKey: 'sol-demo-key', timeoutMs: 2000, maxRequestsPerMinute: 6000,
+      pauseStore: { load: async () => 0, save: async () => { throw new Error('database down'); } },
+      onResult: (_m, outcome) => seen.push(outcome),
+    });
+    const t0 = Date.now();
+    expect(await client.putAvailability('acc-1', range)).toEqual({ kind: 'paused' });
+    expect(seen).toEqual(['429']);
+    expect(client.pausedUntil()).toBeGreaterThanOrEqual(t0 + 4900);
+  });
 });
