@@ -4,6 +4,7 @@ import type pg from 'pg';
 import { pinoHttp } from 'pino-http';
 import { acceptUpdate } from './intake.ts';
 import { logger } from './logger.ts';
+import { getSyncStatus } from './sync-status.ts';
 import { RANGE_TOO_LARGE_MESSAGE, UpdateRequest } from './update-request.ts';
 import type { ZodError } from 'zod';
 
@@ -40,6 +41,15 @@ export function createApp({ pool }: { pool: pg.Pool }): express.Express {
       updateId, accommodationId, from, to,
       statusUrl: `/accommodations/${accommodationId}/sync-status`,
     });
+  });
+
+  app.get('/accommodations/:id/sync-status', async (req, res) => {
+    const status = await getSyncStatus(pool, req.params.id);
+    if (!status) {
+      res.status(404).json({ error: { code: 'NOT_FOUND', message: 'No updates received for this accommodation' } });
+      return;
+    }
+    res.json(status);
   });
 
   const onError: ErrorRequestHandler = (err, req, res, _next) => {
