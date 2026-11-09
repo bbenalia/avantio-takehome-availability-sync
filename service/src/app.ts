@@ -4,6 +4,7 @@ import type pg from 'pg';
 import { pinoHttp } from 'pino-http';
 import { acceptUpdate } from './intake.ts';
 import { logger } from './logger.ts';
+import type { Metrics } from './metrics.ts';
 import { getSyncStatus } from './sync-status.ts';
 import { RANGE_TOO_LARGE_MESSAGE, UpdateRequest } from './update-request.ts';
 import type { ZodError } from 'zod';
@@ -23,7 +24,7 @@ function isDbUnavailable(err: unknown): boolean {
     (e instanceof Error && e.message.includes('timeout exceeded when trying to connect')));
 }
 
-export function createApp({ pool }: { pool: pg.Pool }): express.Express {
+export function createApp({ pool, metrics }: { pool: pg.Pool; metrics?: Metrics }): express.Express {
   const app = express();
   app.use(pinoHttp({ logger }));
   app.use(express.json());
@@ -51,6 +52,12 @@ export function createApp({ pool }: { pool: pg.Pool }): express.Express {
     }
     res.json(status);
   });
+
+  if (metrics) {
+    app.get('/metrics', async (_req, res) => {
+      res.set('Content-Type', metrics.contentType).send(await metrics.render());
+    });
+  }
 
   const onError: ErrorRequestHandler = (err, req, res, _next) => {
     if ((err as { type?: string }).type === 'entity.parse.failed') {
