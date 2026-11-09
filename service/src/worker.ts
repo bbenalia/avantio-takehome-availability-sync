@@ -40,8 +40,10 @@ export function startWorkers(options: WorkerOptions): Workers {
 
   async function findCandidates(db: pg.ClientBase): Promise<string[]> {
     const { rows } = await db.query(
-      `SELECT DISTINCT accommodation_id FROM desired_days
+      `SELECT accommodation_id FROM desired_days
        WHERE version > synced_version AND failed_at IS NULL AND next_attempt_at <= now()
+       GROUP BY accommodation_id
+       ORDER BY min(next_attempt_at)
        LIMIT ${CANDIDATES}`);
     return rows.map(r => r.accommodation_id);
   }
